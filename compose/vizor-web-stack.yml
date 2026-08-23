@@ -1,0 +1,80 @@
+# Vizor Web Control - operator console + MongoDB, as started by StartVizor.bat.
+#
+# This file PULLS A PUBLISHED IMAGE and never builds: no VizorWebControl
+# checkout, no Python, no Node are needed on this machine. It is a copy of the
+# equivalent file inside MaIL (docker/vizor-web-control/docker-compose.yml) so
+# that this folder stands on its own; the project and container names are kept
+# identical on purpose, so a stack started by either launcher is detected and
+# reused by the other rather than duplicated.
+#
+# By hand it would be:
+#   docker compose -f compose\vizor-web-stack.yml up -d --pull always
+#   docker compose -f compose\vizor-web-stack.yml down
+
+name: vizor-web-control
+
+services:
+  mongo:
+    image: mongo:7.0
+    container_name: vizor-mongo
+    # --quiet drops mongod's per-connection "Connection accepted" / "Connection
+    # ended" lines. The healthcheck below runs mongosh, which opens about five
+    # loopback connections and closes them again on every probe, so without this
+    # the log is ten lines of connection churn per interval and little else.
+    command: ["mongod", "--quiet"]
+    ports:
+      # Published so MongoDB Compass / mongosh can attach from the host during
+      # experiments. Unauthenticated - fine on a lab machine, not in production.
+      - "27017:27017"
+    volumes:
+      - vizor_mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      # 30s in steady state rather than 10s: every probe is a fresh mongosh
+      # process and a fresh reconnect, and nothing here needs a MongoDB outage
+      # detected inside ten seconds. start_interval keeps probing fast during
+      # start_period, so dependents gated on service_healthy still start
+      # promptly instead of waiting out a full 30s interval.
+      interval: 30s
+      start_interval: 2s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  vizor-web-control:
+    image: cxy201/vizor-web-control:latest
+    pull_policy: always
+    container_name: vizor-web-control
+    ports:
+      - "8000:8000"
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/
+      DATABASE_NAME: ${DATABASE_NAME:-vizor_ros_logger}
+      # The Vizor stack is a separate Compose project, so Docker DNS cannot
+      # resolve "vizor-demo" from here. It publishes 9090 on the host, so the
+      # backend reaches it back out through the host. Override for a rosbridge
+      # on another machine, e.g. ROSBRIDGE_HOST=192.168.1.50.
+      ROSBRIDGE_HOST: ${ROSBRIDGE_HOST:-host.docker.internal}
+      ROSBRIDGE_PORT: "9090"
+      # Distinct from ROSBRIDGE_HOST: this one is handed to the BROWSER, which
+      # cannot resolve Docker names either. Empty makes the page derive
+      # ws://<host it was loaded from>:9090.
+      ROSBRIDGE_PUBLIC_URL: ""
+      API_RELOAD: "false"
+      # Empty is correct: the frontend is served same-origin by this same app.
+      CORS_ORIGINS: ""
+    extra_hosts:
+      # Built in on Docker Desktop; this makes the same name work on Linux hosts.
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  vizor_mongo_data:
+    # Explicit name, so the volume is not prefixed with the project name and the
+    # logged sessions are the same set regardless of which compose file brought
+    # MongoDB up.
+    name: vizor_mongo_data

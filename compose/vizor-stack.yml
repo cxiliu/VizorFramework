@@ -1,0 +1,52 @@
+# Vizor ROS stack - roscore + the vizor2ros bridge, as started by StartVizor.bat.
+#
+# Pulls the published image cxy201/noetic-vizor; nothing is built here, so this
+# file plus Docker Desktop is the whole thing you need.
+#
+# The project name is explicit so that a stack brought up from here and one
+# brought up by MaIL's launch.bat (where Compose derives "vizor-rviz" from the
+# containing directory) are the SAME Compose project - either launcher can then
+# stop the other's stack instead of leaving orphans behind.
+#
+# By hand it would be:
+#   docker compose -f compose\vizor-stack.yml up -d
+#   docker compose -f compose\vizor-stack.yml down
+
+name: vizor-rviz
+
+services:
+  vizor-demo:
+    image: cxy201/noetic-vizor
+    container_name: vizor-demo
+    tty: true        # docker run -t
+    environment:
+      - ROS_HOSTNAME=vizor-demo
+      - ROS_MASTER_URI=http://ros-core:11311
+    ports:
+      - "9090:9090"
+      - "10000:10000"
+      - "10001:10001"
+      - "10002:10002"
+      - "10003:10003"
+    depends_on:
+      - ros-core
+    command:
+      - roslaunch
+      - --wait
+      - vizor_package
+      - vizor2ros.launch
+      - production:=false
+      - task_log_path:=/root/catkin_ws/data/task_logs
+      - stored_motion_path:=/root/catkin_ws/data/stored_plans
+      - mongo_db_path:=/root/catkin_ws/data/mongodb
+      - active:=HOLO1 # define which devices are participating in tasks
+      - physical:=true # define if the robots are physical or simulated
+      - pipeline:=ompl
+
+  ros-core:
+    image: cxy201/noetic-vizor
+    container_name: ros-core
+    ports:
+      - "11311:11311" #Ros Master Port
+    command:
+      - roscore
