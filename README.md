@@ -1,6 +1,6 @@
 # VizorFramework
 
-**Double-click `StartVizor.bat`.** Brings up the Vizor ROS stack (roscore + rosbridge) and the
+**Double-click `StartVizor.bat` on Windows, or run `./StartVizor.sh` from WSL.** Brings up the Vizor ROS stack (roscore + rosbridge) and the
 Vizor Web Control console (operator UI + MongoDB), and optionally the Windows port-proxy /
 firewall rules a HoloLens on the LAN needs.
 
@@ -20,8 +20,9 @@ Ports: 9090 rosbridge · 10000-10003 Vizor TCP · 11311 ROS master · 8000 conso
 
 ## Stopping
 
-`StopVizor.bat` stops both stacks and keeps the data. Per-stack:
-`.\scripts\stop_vizor.ps1 -Vizor` / `-WebControl`.
+`StopVizor.bat` stops both stacks and keeps the data. From WSL, use `./StopVizor.sh`.
+Per-stack: `.\scripts\stop_vizor.ps1 -Vizor` / `-WebControl`, or from WSL
+`./StopVizor.sh --vizor` / `--web-control`.
 
 Logged sessions live in the `vizor_mongo_data` volume and survive every normal teardown.
 Discarding them is explicit: `docker compose -f compose\vizor-web-stack.yml down -v`.
@@ -29,11 +30,14 @@ Discarding them is explicit: `docker compose -f compose\vizor-web-stack.yml down
 ## Layout
 
 ```
-StartVizor.bat / StopVizor.bat     entry points
+StartVizor.bat / StopVizor.bat     Windows entry points
+StartVizor.sh / StopVizor.sh       WSL/Linux entry points
 compose\vizor-stack.yml            ros-core + vizor-demo
 compose\vizor-web-stack.yml        vizor-web-control + vizor-mongo
 scripts\VizorCommon.ps1            shared helpers (dot-sourced, not run directly)
 scripts\start_vizor.ps1 / stop_vizor.ps1
+scripts/VizorCommon.sh             shared WSL/Linux helpers (sourced, not run directly)
+scripts/start_vizor.sh / stop_vizor.sh
 ```
 
 ## Troubleshooting
