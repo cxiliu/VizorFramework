@@ -2,7 +2,7 @@
 #
 # This file PULLS A PUBLISHED IMAGE and never builds: no VizorWebControl
 # checkout, no Python, no Node are needed on this machine. It is a copy of the
-# equivalent file inside MaIL (docker/vizor-web-control/docker-compose.yml) so
+# equivalent file inside MaIL (docker/vizor-web/docker-compose.yml) so
 # that this folder stands on its own; the project and container names are kept
 # identical on purpose, so a stack started by either launcher is detected and
 # reused by the other rather than duplicated.
