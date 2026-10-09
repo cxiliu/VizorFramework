@@ -4,7 +4,7 @@
 # file plus Docker Desktop is the whole thing you need.
 #
 # The project name is explicit so that a stack brought up from here and one
-# brought up by MaIL's launch.bat (where Compose derives "vizor-rviz" from the
+# brought up by MaIL's launch.bat (where Compose would otherwise derive its own name from the
 # containing directory) are the SAME Compose project - either launcher can then
 # stop the other's stack instead of leaving orphans behind.
 #
@@ -12,16 +12,16 @@
 #   docker compose -f compose\vizor-stack.yml up -d
 #   docker compose -f compose\vizor-stack.yml down
 
-name: vizor-rviz
+name: vizor-ros
 
 services:
-  vizor-demo:
+  vizor-bridge:
     image: cxy201/noetic-vizor
-    container_name: vizor-demo
+    container_name: vizor-bridge
     tty: true        # docker run -t
     environment:
-      - ROS_HOSTNAME=vizor-demo
-      - ROS_MASTER_URI=http://ros-core:11311
+      - ROS_HOSTNAME=vizor-bridge
+      - ROS_MASTER_URI=http://vizor-ros-master:11311
     # The host side is overridable for relay mode (WSL mirrored networking): the launcher then
     # publishes on loopback-only internal ports and scripts\vizor_relay.ps1 serves the real ones.
     # Unset - by hand, on Linux, or without mirrored networking - these are the real ports on
@@ -33,7 +33,7 @@ services:
       - "${VIZOR_PUBLISH_PREFIX:-}${VIZOR_HOST_PORT_10002:-10002}:10002"
       - "${VIZOR_PUBLISH_PREFIX:-}${VIZOR_HOST_PORT_10003:-10003}:10003"
     depends_on:
-      - ros-core
+      - vizor-ros-master
     command:
       - roslaunch
       - --wait
@@ -47,9 +47,9 @@ services:
       - physical:=true # define if the robots are physical or simulated
       - pipeline:=ompl
 
-  ros-core:
+  vizor-ros-master:
     image: cxy201/noetic-vizor
-    container_name: ros-core
+    container_name: vizor-ros-master
     ports:
       - "${VIZOR_PUBLISH_PREFIX:-}${VIZOR_HOST_PORT_11311:-11311}:11311" #Ros Master Port (overridable, see above)
     command:

@@ -74,7 +74,7 @@ function Invoke-Main {
         $Firewall = if (Read-YesNo -Prompt "Set up Windows Firewall / port-proxy rules (for a HoloLens on the LAN)?" -DefaultYes $false) { 'yes' } else { 'no' }
     }
     if (-not $RosStack) {
-        $RosStack = if (Read-YesNo -Prompt "Start the Vizor ROS stack (ros-core + vizor-demo)?" -DefaultYes $true) { 'yes' } else { 'no' }
+        $RosStack = if (Read-YesNo -Prompt "Start the Vizor ROS stack (vizor-ros-master + vizor-bridge)?" -DefaultYes $true) { 'yes' } else { 'no' }
     }
     # Independent of the ROS stack question on purpose: the console is a rosbridge consumer, so it
     # is equally useful against a stack started earlier or one running on another machine.

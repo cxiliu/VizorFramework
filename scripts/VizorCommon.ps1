@@ -7,8 +7,8 @@
 # Fixed by container_name: in the compose files - used to detect stacks that are already up.
 # The names match MaIL's launcher on purpose: a stack a developer already brought up from there is
 # then reused rather than colliding by name.
-$VizorStackContainers  = @('vizor-demo', 'ros-core')
-$WebControlContainers  = @('vizor-web-control', 'vizor-mongo')
+$VizorStackContainers  = @('vizor-bridge', 'vizor-ros-master')
+$WebControlContainers  = @('vizor-web', 'vizor-mongo')
 
 # Relay mode: client-facing port -> the loopback-only port Docker publishes it on instead.
 # See Get-VizorRelayMode.
@@ -246,7 +246,7 @@ function Start-VizorDockerStack {
         # A stack started in the other mode (relay vs. real ports) publishes on the wrong ports:
         # 'up -d' recreates exactly the containers whose ports changed.
         $expected = Get-VizorRosbridgeHostPort
-        $published = @(docker port vizor-demo 9090 2>$null)
+        $published = @(docker port vizor-bridge 9090 2>$null)
         if (($published.Count -gt 0) -and ($published[0] -match ':(\d+)$') -and ([int]$matches[1] -ne $expected)) {
             Write-Host "The running Vizor stack publishes rosbridge on host port $($matches[1]), but this launch needs $expected."
             Write-Host "Recreating it on the right ports..."

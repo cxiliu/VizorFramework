@@ -11,10 +11,10 @@
 #   docker compose -f compose\vizor-web-stack.yml up -d --pull always
 #   docker compose -f compose\vizor-web-stack.yml down
 
-name: vizor-web-control
+name: vizor-web
 
 services:
-  mongo:
+  vizor-mongo:
     image: mongo:7.0
     container_name: vizor-mongo
     # --quiet drops mongod's per-connection "Connection accepted" / "Connection
@@ -42,17 +42,17 @@ services:
       start_period: 20s
     restart: unless-stopped
 
-  vizor-web-control:
+  vizor-web:
     image: cxy201/vizor-web-control:latest
     pull_policy: always
-    container_name: vizor-web-control
+    container_name: vizor-web
     ports:
       - "8000:8000"
     environment:
-      MONGODB_URI: mongodb://mongo:27017/
+      MONGODB_URI: mongodb://vizor-mongo:27017/
       DATABASE_NAME: ${DATABASE_NAME:-vizor_ros_logger}
       # The Vizor stack is a separate Compose project, so Docker DNS cannot
-      # resolve "vizor-demo" from here. It publishes 9090 on the host, so the
+      # resolve "vizor-bridge" from here. It publishes 9090 on the host, so the
       # backend reaches it back out through the host. Override for a rosbridge
       # on another machine, e.g. ROSBRIDGE_HOST=192.168.1.50.
       ROSBRIDGE_HOST: ${ROSBRIDGE_HOST:-host.docker.internal}
@@ -68,7 +68,7 @@ services:
       # Built in on Docker Desktop; this makes the same name work on Linux hosts.
       - "host.docker.internal:host-gateway"
     depends_on:
-      mongo:
+      vizor-mongo:
         condition: service_healthy
     restart: unless-stopped
 

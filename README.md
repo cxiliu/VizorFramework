@@ -11,8 +11,8 @@ Self-contained: pulls published images, needs Docker Desktop (WSL2 backend). Fir
 | Question | Default | Effect |
 |---|---|---|
 | Firewall / port-proxy rules? | **n** | Firewall rules for 9090, 10000-10003, 11311, plus `netsh` port-proxy rules -> the WSL2 IP (no port-proxy in relay mode). Only for LAN clients (HoloLens). One UAC prompt. |
-| Start the Vizor ROS stack? | **y** | `ros-core` + `vizor-demo`, own log window. |
-| Start the Web Control console? | **y** | `vizor-web-control` + `vizor-mongo`; opens http://localhost:8000 when ready. |
+| Start the Vizor ROS stack? | **y** | `vizor-ros-master` + `vizor-bridge`, own log window. |
+| Start the Web Control console? | **y** | `vizor-web` + `vizor-mongo`; opens http://localhost:8000 when ready. |
 | Leave containers running? | **y** | **y** = next launch reuses them. **n** = stopped when you press Enter / close the window. |
 
 Ports: 9090 rosbridge · 10000-10003 Vizor TCP · 11311 ROS master · 8000 console ·
@@ -59,8 +59,8 @@ Discarding them is explicit: `docker compose -f compose\vizor-web-stack.yml down
 
 ```
 StartVizor.bat / StopVizor.bat     entry points
-compose\vizor-stack.yml            ros-core + vizor-demo
-compose\vizor-web-stack.yml        vizor-web-control + vizor-mongo
+compose\vizor-stack.yml            vizor-ros-master + vizor-bridge
+compose\vizor-web-stack.yml        vizor-web + vizor-mongo
 scripts\VizorCommon.ps1            shared helpers (dot-sourced, not run directly)
 scripts\start_vizor.ps1 / stop_vizor.ps1
 ```
@@ -77,3 +77,6 @@ scripts\start_vizor.ps1 / stop_vizor.ps1
 - **`localhost` fails but `127.0.0.1` works** (mirrored mode) — `localhost` resolves to IPv6 `::1`
   first, which mirrored WSL does not forward. Use `127.0.0.1`; in relay mode both work.
 - **Containers left after a Task Manager kill** — run `StopVizor.bat`.
+- **Port conflicts after upgrading from the old names** (`vizor-demo`, `ros-core`, `vizor-web-control`)
+  — the launcher no longer sees those containers. Remove them once, keeping the data:
+  `docker compose -p vizor-rviz down` and `docker compose -p vizor-web-control down` (no `-v`).
