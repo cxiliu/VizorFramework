@@ -10,6 +10,17 @@
 $VizorStackContainers  = @('vizor-demo', 'ros-core')
 $WebControlContainers  = @('vizor-web-control', 'vizor-mongo')
 
+# Relay mode: client-facing port -> the loopback-only port Docker publishes it on instead.
+# See Get-VizorRelayMode.
+$VizorRelayPorts = [ordered]@{
+    9090  = 19090
+    10000 = 20000
+    10001 = 20001
+    10002 = 20002
+    10003 = 20003
+    11311 = 21311
+}
+
 # Tracks which docker stacks THIS process actually started, as opposed to inherited from a previous
 # launch. Used when the user was never asked what to do on exit: then cleanup is conservative and
 # only tears down what it started itself.
@@ -30,6 +41,9 @@ $global:VizorTeardownAll = $false
 # When true, Invoke-VizorCleanup is a no-op: the user asked to leave the containers up so the next
 # launch can reuse them instead of re-pulling and re-booting the stack.
 $global:VizorKeepDockerOnExit = $false
+
+# Whether this process started the relay window (relay mode only).
+$global:VizorStartedRelay = $false
 
 function Assert-CommandExists {
     param([string]$Name, [string]$Hint)
@@ -57,8 +71,10 @@ function Get-WslIp {
 }
 
 function Open-VizorFirewallPorts {
-    # Forwards the Vizor ports from this Windows host into the WSL2 VM and opens them in the
-    # firewall, so a HoloLens (or anything else on the LAN) can reach the containers.
+    # Opens the Vizor ports in the firewall, so a HoloLens (or anything else on the LAN) can reach
+    # them. With a WSL IP it also forwards them from this Windows host into the WSL2 VM. Without
+    # one (relay mode) it only removes stale port-proxy rules: there the relay owns these ports,
+    # and a port-proxy rule on them would hold them and lock both the relay and Docker out.
     # Requires Administrator - the caller elevates before getting here.
     param([string]$WslIp)
     $ports = @(10000, 10001, 10002, 10003, 11311, 9090)
@@ -66,10 +82,117 @@ function Open-VizorFirewallPorts {
         Write-Host "Opening port $port..."
         Invoke-Expression "netsh interface portproxy delete v4tov4 listenport=$port" | Out-Null
         Invoke-Expression "netsh advfirewall firewall delete rule name=$port" | Out-Null
-        Invoke-Expression "netsh interface portproxy add v4tov4 listenport=$port connectport=$port connectaddress=$WslIp" | Out-Null
+        if ($WslIp) {
+            Invoke-Expression "netsh interface portproxy add v4tov4 listenport=$port connectport=$port connectaddress=$WslIp" | Out-Null
+        }
         Invoke-Expression "netsh advfirewall firewall add rule name=$port dir=in action=allow protocol=TCP localport=$port" | Out-Null
     }
+    if (-not $WslIp) {
+        # The relay runs in powershell.exe. Dismissing Windows' "allow access?" prompt for
+        # PowerShell without admin rights leaves "Query User" block rules for it, and a block
+        # rule beats the port allow rules above - the relay would then be unreachable from the
+        # LAN while still working from this PC.
+        $blocks = @(Get-NetFirewallRule -Direction Inbound -Action Block -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -like '*Query User*' } |
+                    Where-Object { ($_ | Get-NetFirewallApplicationFilter).Program -like '*\WindowsPowerShell\v1.0\powershell.exe' })
+        if ($blocks.Count -gt 0) {
+            Write-Host "Removing $($blocks.Count) Windows Firewall block rule(s) for PowerShell left by a dismissed prompt..."
+            $blocks | Remove-NetFirewallRule
+        }
+    }
     netsh interface portproxy show v4tov4
+}
+
+function Test-WslMirroredNetworking {
+    $wslConfig = Join-Path $env:USERPROFILE '.wslconfig'
+    if (-not (Test-Path $wslConfig)) { return $false }
+    foreach ($line in Get-Content $wslConfig) {
+        if ($line -match '^\s*networkingMode\s*=\s*mirrored\s*([#;].*)?$') { return $true }
+    }
+    return $false
+}
+
+function Get-VizorRelayMode {
+    # Relay mode exists for WSL mirrored networking. There a port Docker publishes lives inside the
+    # WSL VM and is reachable only through the host adapters WSL mirrors - not the Windows Mobile
+    # Hotspot one - and Windows cannot listen on a port the VM holds. So Docker moves to
+    # loopback-only internal ports ($VizorRelayPorts) and scripts\vizor_relay.ps1, a plain
+    # Windows listener reachable on every adapter, serves the real ones.
+    # VIZOR_RELAY=on / off overrides the detection.
+    switch (("$env:VIZOR_RELAY").Trim().ToLower()) {
+        'on'  { return $true }
+        'off' { return $false }
+    }
+    return (Test-WslMirroredNetworking)
+}
+
+function Set-VizorPublishedPorts {
+    # Sets the variables compose\vizor-stack.yml reads for its host-side ports. Child processes
+    # (the stack's log window) inherit them. Cleared, the compose defaults apply: the real ports
+    # on all interfaces.
+    param([bool]$Relay)
+    # GetEnumerator, not $VizorRelayPorts[$port]: an [ordered] table indexed with an int looks
+    # up by position, not by key.
+    foreach ($entry in $VizorRelayPorts.GetEnumerator()) {
+        $value = if ($Relay) { [string]$entry.Value } else { $null }
+        [Environment]::SetEnvironmentVariable("VIZOR_HOST_PORT_$($entry.Key)", $value, 'Process')
+    }
+    $prefix = if ($Relay) { '127.0.0.1:' } else { $null }
+    [Environment]::SetEnvironmentVariable('VIZOR_PUBLISH_PREFIX', $prefix, 'Process')
+}
+
+function Get-VizorRosbridgeHostPort {
+    # Where Docker publishes rosbridge on this host, under the current Set-VizorPublishedPorts.
+    if ($env:VIZOR_HOST_PORT_9090) { return [int]$env:VIZOR_HOST_PORT_9090 }
+    return 9090
+}
+
+function Get-VizorRelayProcess {
+    # Callers wrap this in @(...): a single CimInstance comes back unwrapped and has no .Count.
+    return @(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" -ErrorAction SilentlyContinue |
+             Where-Object { $_.CommandLine -like '*vizor_relay.ps1*' })
+}
+
+function Start-VizorRelay {
+    param([string]$FrameworkRoot)
+
+    if (@(Get-VizorRelayProcess).Count -gt 0) {
+        Write-Host "Reusing the Vizor relay already running."
+        return
+    }
+    $map = ($VizorRelayPorts.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ','
+    $relayScript = Join-Path $FrameworkRoot 'scripts\vizor_relay.ps1'
+    Write-Host "Starting the Vizor relay in a separate window..."
+    # Quoted for the same reason as the elevation relaunch: this folder may live under a path
+    # with spaces.
+    Start-Process -FilePath 'powershell.exe' `
+        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$relayScript`"", '-PortMap', $map) `
+        -WorkingDirectory $FrameworkRoot
+    $global:VizorStartedRelay = $true
+}
+
+function Test-VizorRelayListening {
+    # True when the relay process holds every client-facing port - not merely when something
+    # does, since a stale port-proxy rule on them would pass a plain connect test.
+    param([int]$TimeoutSec = 20)
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($sw.Elapsed.TotalSeconds -lt $TimeoutSec) {
+        $relayIds = @(Get-VizorRelayProcess | ForEach-Object { $_.ProcessId })
+        if ($relayIds.Count -gt 0) {
+            $held = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+                      Where-Object { ($relayIds -contains $_.OwningProcess) -and ($VizorRelayPorts.Keys -contains $_.LocalPort) } |
+                      ForEach-Object { $_.LocalPort } | Sort-Object -Unique)
+            if ($held.Count -eq $VizorRelayPorts.Count) { return $true }
+        }
+        Start-Sleep -Seconds 1
+    }
+    return $false
+}
+
+function Stop-VizorRelay {
+    foreach ($relay in Get-VizorRelayProcess) {
+        Stop-Process -Id $relay.ProcessId -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Get-ComposeExe {
@@ -120,6 +243,16 @@ function Start-VizorDockerStack {
 
     $alreadyUp = Get-RunningContainers -Names $VizorStackContainers
     if ($alreadyUp.Count -eq $VizorStackContainers.Count) {
+        # A stack started in the other mode (relay vs. real ports) publishes on the wrong ports:
+        # 'up -d' recreates exactly the containers whose ports changed.
+        $expected = Get-VizorRosbridgeHostPort
+        $published = @(docker port vizor-demo 9090 2>$null)
+        if (($published.Count -gt 0) -and ($published[0] -match ':(\d+)$') -and ([int]$matches[1] -ne $expected)) {
+            Write-Host "The running Vizor stack publishes rosbridge on host port $($matches[1]), but this launch needs $expected."
+            Write-Host "Recreating it on the right ports..."
+            Invoke-Compose -ComposeFile $composeFile -ComposeArgs @('up', '-d') | Out-Host
+            return
+        }
         Write-Host "Reusing the Vizor stack already running ($($VizorStackContainers -join ', ')) - skipping startup."
         return
     }
@@ -316,6 +449,14 @@ function Invoke-VizorCleanup {
                 Write-Host "Warning: failed to stop the Vizor ROS stack cleanly: $_"
             }
         }
+        # The relay (relay mode only) serves nothing without the stack. Inlined for the same
+        # reason as the compose call above.
+        Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -like '*vizor_relay.ps1*' } |
+            ForEach-Object {
+                Write-Host "Stopping the Vizor relay..."
+                Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+            }
     }
 
     if ($downWeb) {

@@ -7,7 +7,7 @@
 #
 # Usage:
 #   StopVizor.bat                            # both stacks
-#   .\scripts\stop_vizor.ps1 -Vizor          # ROS stack only
+#   .\scripts\stop_vizor.ps1 -Vizor          # ROS stack only (plus its relay, in relay mode)
 #   .\scripts\stop_vizor.ps1 -WebControl     # web console + MongoDB only
 #
 # Stopping the web console keeps its MongoDB volume, so logged sessions survive. Discarding them
@@ -69,6 +69,13 @@ try {
         $stoppedAny = (Stop-Stack -Label 'Vizor ROS stack' `
                                   -ComposeFile (Get-VizorComposeFile -FrameworkRoot $FrameworkRoot) `
                                   -Containers $VizorStackContainers) -or $stoppedAny
+        # Relay mode only; it serves nothing without the stack.
+        if (@(Get-VizorRelayProcess).Count -gt 0) {
+            Write-Host "Vizor relay - stopping..."
+            Stop-VizorRelay
+            Write-Host "Vizor relay - stopped."
+            $stoppedAny = $true
+        }
     }
     if ($doWeb) {
         $stoppedAny = (Stop-Stack -Label 'Vizor Web Control' `

@@ -22,12 +22,16 @@ services:
     environment:
       - ROS_HOSTNAME=vizor-demo
       - ROS_MASTER_URI=http://ros-core:11311
+    # The host side is overridable for relay mode (WSL mirrored networking): the launcher then
+    # publishes on loopback-only internal ports and scripts\vizor_relay.ps1 serves the real ones.
+    # Unset - by hand, on Linux, or without mirrored networking - these are the real ports on
+    # all interfaces, as always.
     ports:
-      - "9090:9090"
-      - "10000:10000"
-      - "10001:10001"
-      - "10002:10002"
-      - "10003:10003"
+      - "${VIZOR_PUBLISH_PREFIX:-}${VIZOR_HOST_PORT_9090:-9090}:9090"
+      - "${VIZOR_PUBLISH_PREFIX:-}${VIZOR_HOST_PORT_10000:-10000}:10000"
+      - "${VIZOR_PUBLISH_PREFIX:-}${VIZOR_HOST_PORT_10001:-10001}:10001"
+      - "${VIZOR_PUBLISH_PREFIX:-}${VIZOR_HOST_PORT_10002:-10002}:10002"
+      - "${VIZOR_PUBLISH_PREFIX:-}${VIZOR_HOST_PORT_10003:-10003}:10003"
     depends_on:
       - ros-core
     command:
@@ -47,6 +51,6 @@ services:
     image: cxy201/noetic-vizor
     container_name: ros-core
     ports:
-      - "11311:11311" #Ros Master Port
+      - "${VIZOR_PUBLISH_PREFIX:-}${VIZOR_HOST_PORT_11311:-11311}:11311" #Ros Master Port (overridable, see above)
     command:
       - roscore
