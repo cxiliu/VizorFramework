@@ -16,7 +16,7 @@ name: vizor-ros
 
 services:
   vizor-bridge:
-    image: cxy201/noetic-vizor
+    image: cxy201/noetic-vizor:v1.2
     container_name: vizor-bridge
     tty: true        # docker run -t
     environment:
@@ -48,7 +48,7 @@ services:
       - pipeline:=ompl
 
   vizor-ros-master:
-    image: cxy201/noetic-vizor
+    image: cxy201/noetic-vizor:v1.2
     container_name: vizor-ros-master
     ports:
       - "${VIZOR_PUBLISH_PREFIX:-}${VIZOR_HOST_PORT_11311:-11311}:11311" #Ros Master Port (overridable, see above)

@@ -278,7 +278,7 @@ function Start-VizorDockerStack {
     # the window died - which defeats the point of leaving them running for the next launch.
     $escapedComposeFile = $composeFile -replace "'", "''"
     $scriptBody = @"
-docker pull cxy201/noetic-vizor
+docker pull cxy201/noetic-vizor:v1.2
 $composeExe -f '$escapedComposeFile' up -d
 $composeExe -f '$escapedComposeFile' logs -f
 "@
