@@ -153,6 +153,23 @@ function Get-VizorRelayProcess {
              Where-Object { $_.CommandLine -like '*vizor_relay.ps1*' })
 }
 
+function Start-VizorConsole {
+    # Opens a PowerShell console for a Vizor component: a tab in the "Vizor" Windows Terminal
+    # window when wt.exe is available, otherwise a separate console window. '-w Vizor' names the
+    # window, so the first call creates it and later calls add tabs to it. An elevated launch
+    # gets its own window - WT cannot mix admin and non-admin tabs.
+    param([string]$Title, [string[]]$PowerShellArgs, [string]$WorkingDirectory)
+
+    $wt = Get-Command wt.exe -ErrorAction SilentlyContinue
+    if ($wt) {
+        $wtArgs = @('-w', 'Vizor', 'new-tab', '--title', "`"$Title`"", '--suppressApplicationTitle',
+                    '-d', "`"$WorkingDirectory`"", 'powershell.exe') + $PowerShellArgs
+        Start-Process -FilePath $wt.Source -ArgumentList $wtArgs
+    } else {
+        Start-Process -FilePath 'powershell.exe' -ArgumentList $PowerShellArgs -WorkingDirectory $WorkingDirectory
+    }
+}
+
 function Start-VizorRelay {
     param([string]$FrameworkRoot)
 
@@ -162,11 +179,11 @@ function Start-VizorRelay {
     }
     $map = ($VizorRelayPorts.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ','
     $relayScript = Join-Path $FrameworkRoot 'scripts\vizor_relay.ps1'
-    Write-Host "Starting the Vizor relay in a separate window..."
+    Write-Host "Starting the Vizor relay in a new tab..."
     # Quoted for the same reason as the elevation relaunch: this folder may live under a path
     # with spaces.
-    Start-Process -FilePath 'powershell.exe' `
-        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$relayScript`"", '-PortMap', $map) `
+    Start-VizorConsole -Title 'Vizor relay' `
+        -PowerShellArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$relayScript`"", '-PortMap', $map) `
         -WorkingDirectory $FrameworkRoot
     $global:VizorStartedRelay = $true
 }
@@ -285,9 +302,9 @@ $composeExe -f '$escapedComposeFile' logs -f
     $tempScript = Join-Path $env:TEMP ("vizor_docker_stack_{0}.ps1" -f ([guid]::NewGuid().ToString('N')))
     Set-Content -Path $tempScript -Value $scriptBody -Encoding UTF8
 
-    Write-Host "Starting the Vizor ROS stack in a separate window..."
-    Start-Process -FilePath 'powershell.exe' `
-        -ArgumentList @('-NoExit', '-File', $tempScript) `
+    Write-Host "Starting the Vizor ROS stack in a new tab..."
+    Start-VizorConsole -Title 'Vizor ROS stack' `
+        -PowerShellArgs @('-NoExit', '-File', $tempScript) `
         -WorkingDirectory $FrameworkRoot
     $global:VizorStartedStack = $true
 }
@@ -331,9 +348,9 @@ $composeExe -f '$escapedComposeFile' logs -f
     $tempScript = Join-Path $env:TEMP ("vizor_web_control_{0}.ps1" -f ([guid]::NewGuid().ToString('N')))
     Set-Content -Path $tempScript -Value $scriptBody -Encoding UTF8
 
-    Write-Host "Starting Vizor Web Control (console + MongoDB) in a separate window..."
-    Start-Process -FilePath 'powershell.exe' `
-        -ArgumentList @('-NoExit', '-File', $tempScript) `
+    Write-Host "Starting Vizor Web Control (console + MongoDB) in a new tab..."
+    Start-VizorConsole -Title 'Vizor Web Control' `
+        -PowerShellArgs @('-NoExit', '-File', $tempScript) `
         -WorkingDirectory $FrameworkRoot
     $global:VizorStartedWebControl = $true
 
