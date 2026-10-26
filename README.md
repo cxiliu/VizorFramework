@@ -55,14 +55,24 @@ Answering **y** to the firewall question removes such rules.
 Logged sessions live in the `vizor_mongo_data` volume and survive every normal teardown.
 Discarding them is explicit: `docker compose -f compose\vizor-web-stack.yml down -v`.
 
+## Exporting logged data
+
+`ExportVizorData.bat` (web console must be running) writes every session to `data\`, one folder
+per session (`<start UTC>_<participant>_<id>`) containing a CSV per ROS topic with the message
+flattened into columns, `messages.jsonl` with every message verbatim, and `session.json`.
+Filter with `.\scripts\export_vizor_data.ps1 -Participant <id>` or `-SessionId <id>`; `-OutDir`
+changes the destination. Re-running refreshes the folders; nothing is deleted from MongoDB.
+
 ## Layout
 
 ```
 StartVizor.bat / StopVizor.bat     entry points
+ExportVizorData.bat                logged sessions -> data\ (CSV per topic)
 compose\vizor-stack.yml            vizor-ros-master + vizor-bridge
 compose\vizor-web-stack.yml        vizor-web + vizor-mongo
 scripts\VizorCommon.ps1            shared helpers (dot-sourced, not run directly)
 scripts\start_vizor.ps1 / stop_vizor.ps1
+scripts\export_vizor_data.ps1 / .js  export (the .js runs under mongosh inside vizor-mongo)
 ```
 
 ## Troubleshooting
